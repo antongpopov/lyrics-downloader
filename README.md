@@ -169,6 +169,20 @@ New songs get lyrics the next time it runs. For example, once a week with cron:
 Good tags give the best results. If a song isn't found, check that its artist and title tags match
 how the song is usually written.
 
+## Troubleshooting
+
+- **"The secure connection … was rejected" / "certificate verify failed".** Something on your
+  network — usually a company proxy, VPN or antivirus — is inspecting web traffic with its own
+  certificate. The app verifies certificates the way your operating system does (via
+  [truststore](https://github.com/sethmlarson/truststore), included in the downloads; for the
+  command line: `pip install truststore`), so if your browser works, the app normally does too.
+  If it still fails, try another network.
+- **It seems to sit still.** The status line says what it's waiting for: LRCLIB, MusicBrainz and
+  the Cover Art Archive are free services and sometimes slow or briefly down, so the app waits
+  and retries rather than giving up.
+- **No covers appear.** Tick *Album covers*. Folders that already have a cover file, or whose
+  songs have the artwork embedded, are left alone — the log lists them with the reason.
+
 ## Which players use the files?
 
 Sidecar `.lrc` files with the same name as the song are a long-standing convention. Among others,

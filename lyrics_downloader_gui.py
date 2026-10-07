@@ -220,15 +220,17 @@ class App:
         elif event == "cover":
             self.cover_counts[d["kind"]] += 1
             self.progress.configure(value=d["index"])
-            if d["kind"] != "skipped":
-                what = f"{d['artist']} — {d['album']}" if d["album"] else os.path.basename(d["folder"])
-                src = f" ({d['source']})" if d["source"] else ""
-                self.append(f"{'cover ' + d['kind']:12} {what}{src}", "synced" if d["kind"] == "found" else "muted")
+            what = f"{d['artist']} — {d['album']}" if d["album"] else os.path.basename(d["folder"])
+            extra = f" ({d['source'] or d['reason']})" if d["source"] or d["reason"] else ""
+            self.append(f"{'cover ' + d['kind']:12} {what}{extra}", "synced" if d["kind"] == "found" else "muted")
             self.status.set(self.summary(d["index"]))
+        elif event == "status":
+            # What it's busy with between results — e.g. a server that needs a retry.
+            self.status.set(d["message"])
         elif event == "error":
             self.counts["error"] += 1
             self.append(f"error        {os.path.basename(d['path'])}: {d['message']}", "error")
-            self.status.set("LRCLIB isn't answering — waiting and retrying…")
+            self.status.set("A server isn't answering — waiting and retrying…")
         elif event == "done":
             self.set_running(False)
             word = "Stopped" if d["stopped"] else ("Test run done" if self.dry_run.get() else "Done")
@@ -278,6 +280,7 @@ def main():
         messagebox.showerror(APP_NAME, "Lyrics Downloader needs the tinytag package to read your songs.\n\n"
                                        "Install it with:  python -m pip install tinytag")
         return
+    core.use_system_certificates()
     root = tk.Tk()
     try:
         ttk.Style().theme_use("aqua" if sys.platform == "darwin" else

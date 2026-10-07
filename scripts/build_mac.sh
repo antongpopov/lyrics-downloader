@@ -22,7 +22,7 @@ echo "== Python ($ARCH)"
 uv python install -q cpython-3.12-macos-$ARCH
 rm -rf $WORK && mkdir -p $WORK $OUT
 uv venv -q -p cpython-3.12-macos-$ARCH $WORK/venv
-uv pip install -q -p $WORK/venv/bin/python tinytag pyinstaller
+uv pip install -q -p $WORK/venv/bin/python tinytag truststore pyinstaller
 
 echo "== PyInstaller"
 $RUN $WORK/venv/bin/pyinstaller --noconfirm --log-level WARN --windowed --name "$APP" \

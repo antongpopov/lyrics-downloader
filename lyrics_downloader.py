@@ -23,6 +23,7 @@ import json
 import os
 import re
 import shutil
+import ssl
 import subprocess
 import sys
 import threading
@@ -31,7 +32,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 
 AUDIO_EXTENSIONS = {".mp3", ".m4a", ".flac", ".ogg", ".opus", ".wav", ".aac", ".alac",
                     ".aiff", ".aif", ".wma", ".ape", ".wv"}
@@ -52,6 +53,22 @@ try:
     from tinytag import TinyTag
 except ImportError:  # the command line works with ffprobe alone
     TinyTag = None
+
+
+def use_system_certificates():
+    """Verify HTTPS the way the operating system does (via `truststore`, Python 3.10+), so
+    certificates Windows or macOS trust — e.g. a company proxy's — are trusted here too.
+    Without it Python uses its own list and rejects such networks."""
+    try:
+        import truststore
+        truststore.inject_into_ssl()
+        return True
+    except Exception:  # not installed, or an older Python: fall back to Python's own list
+        return False
+
+
+class CertificateProblem(Exception):
+    """HTTPS certificate rejected — retrying won't help, so the run stops."""
 
 
 # --- reading the song -------------------------------------------------------------------------
@@ -100,22 +117,41 @@ def song_info(path, tags):
 
 # --- LRCLIB -----------------------------------------------------------------------------------
 
-def http_get(url, stop=None, as_json=True):
+# Set by run(): reports what the downloader is waiting for, so a slow server doesn't look like a
+# frozen app. None outside a run.
+_status = [None]
+
+
+def status(message):
+    if _status[0]:
+        _status[0](message)
+
+
+def http_get(url, stop=None, as_json=True, waits=(10, 30, 90), timeout=30):
     """GET -> parsed JSON (or raw bytes), None on 404. 429/5xx and network errors are retried
-    with growing waits; `stop` (a threading.Event) cuts a wait short."""
+    after each of `waits` seconds; `stop` (a threading.Event) cuts a wait short."""
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    for wait in (10, 30, 90, None):
+    host = urllib.parse.urlparse(url).netloc
+    for wait in (*waits, None):
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 return json.load(response) if as_json else response.read()
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 return None
             if e.code not in (429, 500, 502, 503, 504) or wait is None:
                 raise
-        except (urllib.error.URLError, TimeoutError):
+            problem = f"answered {e.code}"
+        except (urllib.error.URLError, TimeoutError) as e:
+            if isinstance(getattr(e, "reason", None), ssl.SSLCertVerificationError):
+                raise CertificateProblem(
+                    f"The secure connection to {host} was rejected ({e.reason.verify_message}). "
+                    "This usually means a company network, VPN or antivirus is inspecting web "
+                    "traffic. Try another network, or ask whoever runs this one.") from e
             if wait is None:
                 raise
+            problem = "isn't answering" if isinstance(e, TimeoutError) or "timed out" in str(e) else f"failed ({e})"
+        status(f"{host} {problem} — trying again in {wait} s…")
         if stop is not None:
             if stop.wait(wait):
                 raise InterruptedError("stopped")
@@ -217,24 +253,28 @@ def find_cover(artist, album, use_itunes, stop):
         return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
     title = _plain_title(album)
+    status(f"Looking for the cover of {artist} — {album}…")
     query = f"releasegroup:{quoted(title)} AND artist:{quoted(artist)}"
     found = musicbrainz_get(f"{MUSICBRAINZ}/release-group/?" + urllib.parse.urlencode(
         {"query": query, "fmt": "json", "limit": 5}), stop) or {}
     for group in found.get("release-groups", []):
         if group.get("score", 0) < 90 or not _same(group.get("title"), album):
             continue
-        image = http_get(f"{COVER_ART_ARCHIVE}/release-group/{group['id']}/front-1200", stop, as_json=False)
+        status(f"Downloading the cover of {artist} — {album}…")
+        image = http_get(f"{COVER_ART_ARCHIVE}/release-group/{group['id']}/front-1200", stop,
+                         as_json=False, waits=(5, 15), timeout=20)
         if image:
             return image, "Cover Art Archive"
 
     if use_itunes:
+        status(f"Trying iTunes for {artist} — {album}…")
         results = get_json(f"{ITUNES_SEARCH}?" + urllib.parse.urlencode(
             {"term": f"{artist} {title}", "entity": "album", "limit": 10}), stop) or {}
         for r in results.get("results", []):
             if _same(r.get("collectionName"), album) and _same(r.get("artistName"), artist) \
                     and r.get("artworkUrl100"):
                 url = r["artworkUrl100"].replace("100x100bb", "1200x1200bb")
-                image = http_get(url, stop, as_json=False)
+                image = http_get(url, stop, as_json=False, waits=(5, 15), timeout=20)
                 if image:
                     return image, "iTunes"
     return None, None
@@ -322,10 +362,12 @@ def run(paths, opts, emit, stop=None):
         song(index, total, kind, path, artist, title)       kind: one of KINDS
         cover(index, total, kind, folder, artist, album, source)   kind: one of COVER_KINDS
         error(index, total, path, message)
+        status(message)           what it's busy with or waiting for, e.g. a server retry
         done(counts, covers, stopped)
 
     `stop` is a threading.Event; set it to end the run after the current song."""
     stop = stop or threading.Event()
+    _status[0] = lambda message: emit("status", message=message)
     songs = list(find_songs(paths, opts.extensions))
     folders = list(dict.fromkeys(os.path.dirname(p) for p in songs)) if opts.covers else []
     lyric_songs = songs if opts.lyrics else []
@@ -409,15 +451,18 @@ def run(paths, opts, emit, stop=None):
             key = "cover:" + os.path.abspath(folder)
             first = next(p for p in songs if os.path.dirname(p) == folder)
 
-            def cover(kind, artist="", album="", source=""):
+            def cover(kind, artist="", album="", source="", reason=""):
                 cover_counts[kind] += 1
                 emit("cover", index=index, total=total, kind=kind, folder=folder,
-                     artist=artist, album=album, source=source)
+                     artist=artist, album=album, source=source, reason=reason)
 
-            if not opts.overwrite and (has_cover_file(folder) or cache.fresh_miss(key)
-                                       or has_embedded_picture(first)):
-                cover("skipped")
-                continue
+            if not opts.overwrite:
+                reason = ("already has a cover file" if has_cover_file(folder) else
+                          "not found last time" if cache.fresh_miss(key) else
+                          "artwork is embedded in the songs" if has_embedded_picture(first) else "")
+                if reason:
+                    cover("skipped", reason=reason)
+                    continue
             tags, _ = probe(first)
             artist, _, album = song_info(first, tags)
             artist = str(tags.get("album_artist") or tags.get("albumartist") or artist)
@@ -447,6 +492,7 @@ def run(paths, opts, emit, stop=None):
                 cache.save()
     finally:
         cache.save()
+        _status[0] = None
         emit("done", counts=counts, covers=cover_counts, stopped=stop.is_set())
     return counts
 
@@ -502,10 +548,12 @@ def main(argv=None):
         if event == "song" and not args.quiet and d["kind"] != "skipped":
             label = f"{d['artist']} — {d['title']}" if d["artist"] else d["path"]
             print(f"{d['kind']:12} {label}", flush=True)
-        elif event == "cover" and not args.quiet and d["kind"] != "skipped":
+        elif event == "cover" and not args.quiet:
             what = f"{d['artist']} — {d['album']}" if d["album"] else d["folder"]
-            src = f" ({d['source']})" if d["source"] else ""
-            print(f"{'cover ' + d['kind']:12} {what}{src}", flush=True)
+            extra = f" ({d['source'] or d['reason']})" if d["source"] or d["reason"] else ""
+            print(f"{'cover ' + d['kind']:12} {what}{extra}", flush=True)
+        elif event == "status" and not args.quiet and "trying again" in d["message"]:
+            print(f"             {d['message']}", file=sys.stderr, flush=True)
         elif event == "error":
             print(f"error        {d['path']}: {d['message']}", file=sys.stderr, flush=True)
         elif event == "done":
@@ -519,11 +567,14 @@ def main(argv=None):
             print(f"done{' (dry run)' if args.dry_run else ''}: {summary or 'nothing to do'}{note}",
                   flush=True)
 
+    use_system_certificates()
     stop = threading.Event()
     try:
         run(args.paths, opts, emit, stop)
     except KeyboardInterrupt:
         stop.set()
+    except CertificateProblem as e:
+        sys.exit(str(e))
     return 0
 
 

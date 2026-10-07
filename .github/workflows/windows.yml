@@ -31,7 +31,7 @@ jobs:
           D="Lyrics Downloader"
           mkdir -p "pkg/$D"
           cp lyrics_downloader.py lyrics_downloader_gui.py "Lyrics Downloader.pyw" LICENSE "pkg/$D/"
-          python -m pip install --target "pkg/$D" --no-deps tinytag
+          python -m pip install --target "pkg/$D" --no-deps tinytag truststore
           rm -rf "pkg/$D"/bin "pkg/$D"/*.dist-info/RECORD
           cat > "pkg/$D/READ ME FIRST.txt" <<'TXT'
           Lyrics Downloader for Windows
@@ -54,7 +54,7 @@ jobs:
           Choose your music folder, tick Lyrics and/or Album covers, press Start.
 
           More: https://github.com/antongpopov/lyrics-downloader
-          Bundled: tinytag (MIT licence, https://github.com/tinytag/tinytag).
+          Bundled: tinytag and truststore (both MIT licence).
           TXT
           sed -i 's/^          //' "pkg/$D/READ ME FIRST.txt"
           echo "ZIP=LyricsDownloader-$VERSION-windows.zip" >> "$GITHUB_ENV"
@@ -62,7 +62,7 @@ jobs:
         shell: bash
         run: |
           cd "pkg/Lyrics Downloader"
-          python -c "import lyrics_downloader as c, lyrics_downloader_gui; assert c.TinyTag is not None; print('ok', c.__version__)"
+          python -c "import lyrics_downloader as c, lyrics_downloader_gui; assert c.TinyTag is not None; assert c.use_system_certificates(); print('ok', c.__version__)"
           python lyrics_downloader.py --version
       - name: Zip
         shell: pwsh
