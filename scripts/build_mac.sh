@@ -42,9 +42,14 @@ if [[ ${SIGN:-1} == 0 || -z $IDENTITY ]]; then
 else
   echo "== Signing as $IDENTITY"
   # Inside out: every binary first, then the bundle, all with the hardened runtime.
+  # Each file is retried (the timestamp server hiccups now and then) and a file that still fails
+  # stops the build: a silently skipped one only shows up later as a notarization rejection.
+  sign() { codesign --force --timestamp --options runtime --entitlements assets/entitlements.plist -s "$IDENTITY" "$1"; }
   find "$BUNDLE/Contents" -type f \( -name "*.so" -o -name "*.dylib" -o -perm -u+x \) -print0 |
-    xargs -0 -n1 codesign --force --timestamp --options runtime \
-      --entitlements assets/entitlements.plist -s "$IDENTITY" 2>/dev/null || true
+    while IFS= read -r -d '' f; do
+      file -b "$f" | grep -q Mach-O || continue
+      sign "$f" 2>/dev/null || { sleep 3; sign "$f" 2>/dev/null; } || { sleep 10; sign "$f"; }
+    done
   codesign --force --timestamp --options runtime --entitlements assets/entitlements.plist -s "$IDENTITY" "$BUNDLE"
   codesign --verify --deep --strict "$BUNDLE"
   ditto -c -k --keepParent "$BUNDLE" "$ZIP"
