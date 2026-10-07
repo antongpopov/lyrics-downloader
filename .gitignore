@@ -3,3 +3,7 @@ __pycache__/
 .lyrics-downloader-cache.json
 *.part
 .DS_Store
+.venv/
+build/
+dist/
+*.spec.bak

@@ -8,7 +8,9 @@ Music/ABBA/ABBA Gold/02 Knowing Me, Knowing You.m4a
 Music/ABBA/ABBA Gold/02 Knowing Me, Knowing You.lrc   ← synced, time-stamped lyrics
 ```
 
-- One Python file, no packages to install — just Python 3.8+ and `ffprobe` (part of FFmpeg).
+- **Desktop app** for macOS and Windows: pick your music folder, press Start.
+- Or the **command line**: one Python file; needs Python 3.8+ plus either the small `tinytag`
+  package or `ffprobe` (part of FFmpeg) to read your songs' tags.
 - Lyrics come from [LRCLIB](https://lrclib.net), a free, community-built lyrics database with an
   open API (no account or API key).
 - Prefers **synced** lyrics (`.lrc`, which scroll along with the song); falls back to plain lyrics
@@ -16,15 +18,38 @@ Music/ABBA/ABBA Gold/02 Knowing Me, Knowing You.lrc   ← synced, time-stamped l
 - Safe to stop and run again: songs that already have lyrics are skipped, and songs with no match
   are remembered so they aren't looked up on every run.
 
-## Requirements
+## Desktop app
+
+Download it from the [Releases page](https://github.com/antongpopov/lyrics-downloader/releases/latest):
+
+| System | Download |
+|---|---|
+| Mac with Apple silicon (M1 and later) | `LyricsDownloader-…-mac-arm64.zip` |
+| Mac with an Intel processor | `LyricsDownloader-…-mac-x86_64.zip` |
+| Windows 10 / 11 | `LyricsDownloader-…-windows.exe` |
+
+- **Mac:** unzip, move **Lyrics Downloader** to Applications and open it. The app is signed and
+  notarized by Apple, so it opens normally.
+- **Windows:** run the `.exe`, nothing to install. Windows may say *"Windows protected your PC"*,
+  because the program isn't signed with a paid Microsoft certificate: click **More info → Run anyway**.
+
+Choose your music folder, tick any options, and press **Start**. The window lists every song as it
+goes and shows a running count; **Stop** ends the run, and the next Start carries on where it
+left off. The app remembers your folder.
+
+## Command line
+
+### Requirements
 
 - **Python 3.8 or newer** — `python3 --version`
-- **ffprobe**, which comes with FFmpeg — `ffprobe -version`
-  - macOS: `brew install ffmpeg`
-  - Debian / Ubuntu / Raspberry Pi OS: `sudo apt install ffmpeg`
-  - Windows: `winget install ffmpeg`, or a build from [ffmpeg.org](https://ffmpeg.org/download.html)
+- To read your songs' tags, **one** of:
+  - **tinytag** (recommended, pure Python) — `python3 -m pip install tinytag`
+  - **ffprobe**, which comes with FFmpeg — `ffprobe -version`
+    - macOS: `brew install ffmpeg`
+    - Debian / Ubuntu / Raspberry Pi OS: `sudo apt install ffmpeg`
+    - Windows: `winget install ffmpeg`, or a build from [ffmpeg.org](https://ffmpeg.org/download.html)
 
-## Install
+### Install
 
 ```sh
 git clone https://github.com/antongpopov/lyrics-downloader.git
@@ -37,7 +62,7 @@ Or grab just the script:
 curl -O https://raw.githubusercontent.com/antongpopov/lyrics-downloader/main/lyrics_downloader.py
 ```
 
-## Use
+### Use
 
 Try it first without writing anything:
 
@@ -59,7 +84,7 @@ You can pass several folders, or single files. Each song prints one line — `sy
 nohup python3 lyrics_downloader.py /srv/music >> lyrics.log 2>&1 &
 ```
 
-### Options
+#### Options
 
 | Option | What it does |
 |---|---|
@@ -75,7 +100,7 @@ nohup python3 lyrics_downloader.py /srv/music >> lyrics.log 2>&1 &
 | `--ext .EXT` | Only these audio extensions (repeatable), e.g. `--ext .flac --ext .mp3` |
 | `-q`, `--quiet` | Only print errors and the summary |
 
-### Keeping it up to date
+#### Keeping it up to date
 
 New songs get lyrics the next time it runs. For example, once a week with cron:
 
@@ -89,7 +114,7 @@ New songs get lyrics the next time it runs. For example, once a week with cron:
    (mp3, m4a, flac, ogg, opus, wav, aac, alac, aiff, wma, ape, wv). Hidden folders are skipped.
 2. **Skips songs that already have lyrics:** a `.lrc` or `.txt` with the same name next to the song,
    or lyrics embedded in its tags. (`--overwrite` turns both checks off.)
-3. **Reads the song's tags** — artist, title, album and length — with `ffprobe`. If a file has no
+3. **Reads the song's tags** — artist, title, album and length — with `tinytag` (or `ffprobe`). If a file has no
    tags, it falls back to the folder layout `Artist/Album/NN Title.ext`.
 4. **Asks LRCLIB**, first for an exact match on artist, title, album and length, then with a search
    whose results must be within `--tolerance` seconds of your file's length. That length check is
@@ -122,6 +147,20 @@ Song lyrics are copyrighted by their authors and publishers. LRCLIB's *software*
 that doesn't licence the lyrics in it. This tool is meant for adding lyrics to **your own music
 library for your own use**. Don't use it to republish lyrics or to ship them inside an app or
 product.
+
+## Building the apps
+
+The desktop app is `lyrics_downloader_gui.py` (Tk, part of Python) on top of `lyrics_downloader.py`.
+Run it from source with `python3 lyrics_downloader_gui.py` (needs `tinytag` and a Python with Tk).
+
+- **Windows:** the [Windows build](.github/workflows/windows.yml) workflow builds the `.exe` with
+  PyInstaller on every `v*` tag and attaches it to that release.
+- **macOS:** `scripts/build_mac.sh arm64` and `scripts/build_mac.sh x86_64` build the app with
+  PyInstaller (via [uv](https://docs.astral.sh/uv/)), sign it with a *Developer ID Application*
+  certificate, notarize it with an App Store Connect API key (`ASC_KEY_PATH`, `ASC_KEY_ID`,
+  `ASC_ISSUER_ID`) and staple it; `--upload` attaches the zip to the release. This runs on the
+  maintainer's Mac on purpose, so no signing keys live in this public repository. Without a
+  certificate it builds an unsigned app (`SIGN=0` forces that).
 
 ## Licence
 
