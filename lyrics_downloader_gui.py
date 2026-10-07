@@ -2,7 +2,8 @@
 """Lyrics Downloader — the desktop app (macOS, Windows, Linux).
 
 A small window around lyrics_downloader.run(): pick your music folder, press Start, and lyrics
-from LRCLIB are saved as .lrc/.txt files next to your songs. Needs Python 3.8+ with Tk and the
+from LRCLIB are saved as .lrc/.txt files next to your songs — and, if ticked, each album's front
+cover as cover.jpg in its folder. Needs Python 3.8+ with Tk and the
 `tinytag` package; the packaged apps on the Releases page include both.
 """
 import json
@@ -55,12 +56,13 @@ class App:
         self.stop = threading.Event()
         self.worker = None
         self.counts = dict.fromkeys(core.KINDS, 0)
+        self.cover_counts = dict.fromkeys(core.COVER_KINDS, 0)
         self.total = 0
         settings = load_settings()
 
         root.title(APP_NAME)
-        root.minsize(560, 460)
-        root.geometry("700x560")
+        root.minsize(600, 540)
+        root.geometry("720x640")
         pad = {"padx": 12, "pady": 6}
 
         # Folder
@@ -77,13 +79,24 @@ class App:
         # Options
         opts = ttk.Frame(root)
         opts.pack(fill="x", **pad)
+        self.lyrics = tk.BooleanVar(value=settings.get("lyrics", True))
         self.synced_only = tk.BooleanVar(value=settings.get("synced_only", False))
+        self.covers = tk.BooleanVar(value=settings.get("covers", False))
+        self.itunes = tk.BooleanVar(value=settings.get("itunes", False))
         self.overwrite = tk.BooleanVar(value=False)
         self.dry_run = tk.BooleanVar(value=False)
-        ttk.Checkbutton(opts, text="Only synced lyrics (.lrc) — skip songs with plain lyrics only",
-                        variable=self.synced_only).pack(anchor="w")
-        ttk.Checkbutton(opts, text="Replace lyrics files that already exist",
-                        variable=self.overwrite).pack(anchor="w")
+        ttk.Checkbutton(opts, text="Lyrics — a .lrc or .txt file next to each song",
+                        variable=self.lyrics, command=self.update_options).pack(anchor="w")
+        self.synced_box = ttk.Checkbutton(opts, text="Only synced lyrics (.lrc) — skip songs with plain lyrics only",
+                                          variable=self.synced_only)
+        self.synced_box.pack(anchor="w", padx=(24, 0))
+        ttk.Checkbutton(opts, text="Album covers — cover.jpg in each album folder (Cover Art Archive)",
+                        variable=self.covers, command=self.update_options).pack(anchor="w", pady=(4, 0))
+        self.itunes_box = ttk.Checkbutton(opts, text="Also look in Apple's iTunes catalog when it's missing there",
+                                          variable=self.itunes)
+        self.itunes_box.pack(anchor="w", padx=(24, 0))
+        ttk.Checkbutton(opts, text="Replace lyrics and covers that already exist",
+                        variable=self.overwrite).pack(anchor="w", pady=(4, 0))
         ttk.Checkbutton(opts, text="Test run — look songs up but don't save anything",
                         variable=self.dry_run).pack(anchor="w")
 
@@ -111,7 +124,7 @@ class App:
         # Footer
         foot = ttk.Frame(root)
         foot.pack(fill="x", padx=12, pady=(0, 10))
-        link = ttk.Label(foot, text="Lyrics from LRCLIB (lrclib.net) — for your own music library only.",
+        link = ttk.Label(foot, text="Lyrics: LRCLIB · Covers: Cover Art Archive — for your own music library only.",
                          foreground="#888888", cursor="hand2")
         link.pack(side="left")
         link.bind("<Button-1>", lambda _: webbrowser.open("https://lrclib.net"))
@@ -119,10 +132,15 @@ class App:
         about.pack(side="right")
         about.bind("<Button-1>", lambda _: webbrowser.open(REPO))
 
+        self.update_options()
         root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.root.after(100, self.pump)
 
     # --- actions ---------------------------------------------------------------------------
+
+    def update_options(self):
+        self.synced_box.configure(state="normal" if self.lyrics.get() else "disabled")
+        self.itunes_box.configure(state="normal" if self.covers.get() else "disabled")
 
     def choose_folder(self):
         folder = filedialog.askdirectory(title="Choose your music folder",
@@ -135,15 +153,21 @@ class App:
         if not folder or not os.path.isdir(folder):
             messagebox.showwarning(APP_NAME, "Choose a music folder first.")
             return
-        save_settings({"folder": folder, "synced_only": self.synced_only.get()})
+        if not self.lyrics.get() and not self.covers.get():
+            messagebox.showwarning(APP_NAME, "Tick Lyrics, Album covers, or both.")
+            return
+        save_settings({"folder": folder, "lyrics": self.lyrics.get(), "synced_only": self.synced_only.get(),
+                       "covers": self.covers.get(), "itunes": self.itunes.get()})
         self.counts = dict.fromkeys(core.KINDS, 0)
+        self.cover_counts = dict.fromkeys(core.COVER_KINDS, 0)
         self.stop.clear()
         self.set_running(True)
         self.clear_log()
         self.status.set("Looking for songs…")
         self.progress.configure(value=0, maximum=1)
         opts = core.Options(dry_run=self.dry_run.get(), synced_only=self.synced_only.get(),
-                            overwrite=self.overwrite.get())
+                            overwrite=self.overwrite.get(), lyrics=self.lyrics.get(),
+                            covers=self.covers.get(), itunes=self.itunes.get())
 
         def emit(event, **data):
             self.events.put((event, data))
@@ -193,6 +217,14 @@ class App:
                 tag = d["kind"] if d["kind"] in ("synced", "plain") else "muted"
                 self.append(f"{d['kind']:12} {label}", tag)
             self.status.set(self.summary(d["index"]))
+        elif event == "cover":
+            self.cover_counts[d["kind"]] += 1
+            self.progress.configure(value=d["index"])
+            if d["kind"] != "skipped":
+                what = f"{d['artist']} — {d['album']}" if d["album"] else os.path.basename(d["folder"])
+                src = f" ({d['source']})" if d["source"] else ""
+                self.append(f"{'cover ' + d['kind']:12} {what}{src}", "synced" if d["kind"] == "found" else "muted")
+            self.status.set(self.summary(d["index"]))
         elif event == "error":
             self.counts["error"] += 1
             self.append(f"error        {os.path.basename(d['path'])}: {d['message']}", "error")
@@ -211,10 +243,15 @@ class App:
     # --- helpers -----------------------------------------------------------------------------
 
     def summary(self, index=None):
-        c = self.counts
-        parts = [f"{c['synced']} synced", f"{c['plain']} plain", f"{c['not found']} not found"]
-        if c["skipped"]:
-            parts.append(f"{c['skipped']} already had lyrics")
+        c, k = self.counts, self.cover_counts
+        parts = []
+        if self.lyrics.get():
+            parts += [f"{c['synced']} synced", f"{c['plain']} plain", f"{c['not found']} not found"]
+            if c["skipped"]:
+                parts.append(f"{c['skipped']} already had lyrics")
+        if self.covers.get():
+            parts.append(f"covers: {k['found']} found, {k['not found']} not found"
+                         + (f", {k['skipped']} already had one" if k["skipped"] else ""))
         prefix = f"{index:,} / {self.total:,} — " if index is not None else ""
         return prefix + ", ".join(parts)
 

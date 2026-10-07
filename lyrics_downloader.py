@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Download lyrics for a local music library and save them next to the songs.
+"""Download lyrics (and optionally album covers) for a local music library, saved next to the songs.
 
 For every audio file that has no lyrics yet, reads its tags with ffprobe, looks the song up on
 LRCLIB (https://lrclib.net) and writes the result beside it with the same name:
 
     Artist/Album/03 Song.flac  ->  Artist/Album/03 Song.lrc   (synced, time-stamped lyrics)
                                ->  Artist/Album/03 Song.txt   (plain lyrics, when no synced exist)
+
+With --covers it also saves each album folder's front cover as cover.jpg, from the Cover Art
+Archive (MusicBrainz), optionally falling back to Apple's iTunes catalog (--itunes).
 
 Safe to stop and re-run: songs that already have a .lrc/.txt (or lyrics embedded in their tags)
 are skipped, and songs LRCLIB had nothing for are remembered in a small cache file and only
@@ -28,7 +31,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 AUDIO_EXTENSIONS = {".mp3", ".m4a", ".flac", ".ogg", ".opus", ".wav", ".aac", ".alac",
                     ".aiff", ".aif", ".wma", ".ape", ".wv"}
@@ -38,6 +41,12 @@ USER_AGENT = f"lyrics-downloader/{__version__} (+https://github.com/antongpopov/
 CACHE_NAME = ".lyrics-downloader-cache.json"
 EMBEDDED_LYRICS_TAGS = ("lyrics", "unsyncedlyrics", "uslt", "©lyr")
 KINDS = ("synced", "plain", "instrumental", "not found", "skipped", "error")
+COVER_KINDS = ("found", "not found", "skipped", "error")
+COVER_NAMES = ("cover.jpg", "cover.jpeg", "cover.png", "folder.jpg", "folder.jpeg", "folder.png",
+               "front.jpg", "front.jpeg", "front.png", "album.jpg", "album.png", "albumart.jpg")
+MUSICBRAINZ = "https://musicbrainz.org/ws/2"
+COVER_ART_ARCHIVE = "https://coverartarchive.org"
+ITUNES_SEARCH = "https://itunes.apple.com/search"
 
 try:
     from tinytag import TinyTag
@@ -91,13 +100,14 @@ def song_info(path, tags):
 
 # --- LRCLIB -----------------------------------------------------------------------------------
 
-def get_json(url, stop=None):
-    """GET -> parsed JSON, None on 404. 429/5xx and network errors are retried with growing waits."""
+def http_get(url, stop=None, as_json=True):
+    """GET -> parsed JSON (or raw bytes), None on 404. 429/5xx and network errors are retried
+    with growing waits; `stop` (a threading.Event) cuts a wait short."""
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     for wait in (10, 30, 90, None):
         try:
-            with urllib.request.urlopen(request, timeout=20) as response:
-                return json.load(response)
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return json.load(response) if as_json else response.read()
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 return None
@@ -111,6 +121,10 @@ def get_json(url, stop=None):
                 raise InterruptedError("stopped")
         else:
             time.sleep(wait)
+
+
+def get_json(url, stop=None):
+    return http_get(url, stop, as_json=True)
 
 
 def lookup(artist, title, album, duration, tolerance, stop=None):
@@ -138,6 +152,100 @@ def lookup(artist, title, album, duration, tolerance, stop=None):
         return None
     return min(candidates, key=lambda r: (0 if r.get("syncedLyrics") else 1,
                                           abs((r.get("duration") or 0) - duration)))
+
+
+# --- album covers ------------------------------------------------------------------------------
+
+def has_cover_file(folder):
+    try:
+        names = {n.lower() for n in os.listdir(folder)}
+    except OSError:
+        return False
+    return any(n in names for n in COVER_NAMES)
+
+
+def has_embedded_picture(path):
+    if TinyTag is not None:
+        try:
+            return TinyTag.get(path, image=True).images.any is not None
+        except Exception:
+            return False
+    try:
+        out = subprocess.run(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", path],
+                             capture_output=True, text=True, timeout=30).stdout
+        streams = json.loads(out or "{}").get("streams", [])
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+        return False
+    return any((s.get("disposition") or {}).get("attached_pic") for s in streams)
+
+
+def _norm(text):
+    """Comparable form of an album or artist name: no edition notes, case or punctuation."""
+    text = re.sub(r"[\(\[][^\)\]]*[\)\]]", "", text or "")
+    return re.sub(r"[\W_]+", "", text.casefold())
+
+
+_last_musicbrainz = [0.0]
+
+
+def musicbrainz_get(url, stop):
+    """MusicBrainz allows one request per second per client."""
+    wait = 1.1 - (time.time() - _last_musicbrainz[0])
+    if wait > 0 and stop.wait(wait):
+        raise InterruptedError("stopped")
+    try:
+        return get_json(url, stop)
+    finally:
+        _last_musicbrainz[0] = time.time()
+
+
+def _plain_title(text):
+    """'The Wall (Deluxe Experience Edition) [Remastered]' -> 'The Wall', for searching."""
+    return re.sub(r"\s*[\(\[][^\)\]]*[\)\]]", "", text or "").strip() or (text or "")
+
+
+def _same(a, b):
+    # Exact, after _norm. Looser matching ("one contains the other") put "More ABBA Gold" on
+    # ABBA Gold: a missing cover is better than a wrong one.
+    a, b = _norm(a), _norm(b)
+    return bool(a) and a == b
+
+
+def find_cover(artist, album, use_itunes, stop):
+    """(image bytes, source) for the album's front cover, or (None, None)."""
+    def quoted(s):
+        return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+    title = _plain_title(album)
+    query = f"releasegroup:{quoted(title)} AND artist:{quoted(artist)}"
+    found = musicbrainz_get(f"{MUSICBRAINZ}/release-group/?" + urllib.parse.urlencode(
+        {"query": query, "fmt": "json", "limit": 5}), stop) or {}
+    for group in found.get("release-groups", []):
+        if group.get("score", 0) < 90 or not _same(group.get("title"), album):
+            continue
+        image = http_get(f"{COVER_ART_ARCHIVE}/release-group/{group['id']}/front-1200", stop, as_json=False)
+        if image:
+            return image, "Cover Art Archive"
+
+    if use_itunes:
+        results = get_json(f"{ITUNES_SEARCH}?" + urllib.parse.urlencode(
+            {"term": f"{artist} {title}", "entity": "album", "limit": 10}), stop) or {}
+        for r in results.get("results", []):
+            if _same(r.get("collectionName"), album) and _same(r.get("artistName"), artist) \
+                    and r.get("artworkUrl100"):
+                url = r["artworkUrl100"].replace("100x100bb", "1200x1200bb")
+                image = http_get(url, stop, as_json=False)
+                if image:
+                    return image, "iTunes"
+    return None, None
+
+
+def write_bytes_atomic(path, data):
+    tmp = path + ".part"
+    with open(tmp, "wb") as f:
+        f.write(data)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, path)
 
 
 # --- files ------------------------------------------------------------------------------------
@@ -197,30 +305,37 @@ class Cache:
 
 class Options:
     def __init__(self, dry_run=False, synced_only=False, overwrite=False, limit=0, delay=0.5,
-                 tolerance=3.0, cache=None, use_cache=True, retry_days=30.0, extensions=None):
+                 tolerance=3.0, cache=None, use_cache=True, retry_days=30.0, extensions=None,
+                 lyrics=True, covers=False, itunes=False):
         self.dry_run, self.synced_only, self.overwrite = dry_run, synced_only, overwrite
         self.limit, self.delay, self.tolerance = limit, delay, tolerance
         self.cache, self.use_cache, self.retry_days = cache, use_cache, retry_days
         self.extensions = extensions or AUDIO_EXTENSIONS
+        self.lyrics, self.covers, self.itunes = lyrics, covers, itunes
 
 
 def run(paths, opts, emit, stop=None):
-    """Downloads lyrics for every song under `paths`. Reports through `emit(event, **data)`:
+    """Downloads lyrics for every song (and covers for every album folder) under `paths`.
+    Reports through `emit(event, **data)`:
 
-        start(total)                          songs found, before any lookup
-        song(index, total, kind, path, artist, title)   kind: one of KINDS
+        start(total)              steps: songs (if lyrics) + album folders (if covers)
+        song(index, total, kind, path, artist, title)       kind: one of KINDS
+        cover(index, total, kind, folder, artist, album, source)   kind: one of COVER_KINDS
         error(index, total, path, message)
-        done(counts, stopped)
+        done(counts, covers, stopped)
 
     `stop` is a threading.Event; set it to end the run after the current song."""
     stop = stop or threading.Event()
     songs = list(find_songs(paths, opts.extensions))
-    total = len(songs)
+    folders = list(dict.fromkeys(os.path.dirname(p) for p in songs)) if opts.covers else []
+    lyric_songs = songs if opts.lyrics else []
+    total = len(lyric_songs) + len(folders)
     emit("start", total=total)
     first_dir = next((p for p in paths if os.path.isdir(p)), os.path.dirname(os.path.abspath(paths[0])))
     cache = Cache(opts.cache or os.path.join(first_dir, CACHE_NAME), opts.retry_days,
                   enabled=opts.use_cache and not opts.dry_run)
     counts = dict.fromkeys(KINDS, 0)
+    cover_counts = dict.fromkeys(COVER_KINDS, 0)
     looked_up = errors_in_a_row = 0
 
     def song(index, kind, path, artist="", title=""):
@@ -228,7 +343,7 @@ def run(paths, opts, emit, stop=None):
         emit("song", index=index, total=total, kind=kind, path=path, artist=artist, title=title)
 
     try:
-        for index, path in enumerate(songs, 1):
+        for index, path in enumerate(lyric_songs, 1):
             if stop.is_set():
                 break
             base = os.path.splitext(path)[0]
@@ -285,9 +400,54 @@ def run(paths, opts, emit, stop=None):
                 cache.save()
             if stop.wait(opts.delay):
                 break
+
+        # Covers: one per album folder, after the lyrics.
+        for n, folder in enumerate(folders, 1):
+            index = len(lyric_songs) + n
+            if stop.is_set():
+                break
+            key = "cover:" + os.path.abspath(folder)
+            first = next(p for p in songs if os.path.dirname(p) == folder)
+
+            def cover(kind, artist="", album="", source=""):
+                cover_counts[kind] += 1
+                emit("cover", index=index, total=total, kind=kind, folder=folder,
+                     artist=artist, album=album, source=source)
+
+            if not opts.overwrite and (has_cover_file(folder) or cache.fresh_miss(key)
+                                       or has_embedded_picture(first)):
+                cover("skipped")
+                continue
+            tags, _ = probe(first)
+            artist, _, album = song_info(first, tags)
+            artist = str(tags.get("album_artist") or tags.get("albumartist") or artist)
+            if not artist or not album:
+                cache.remember(key, "no tags")
+                cover("not found")
+                continue
+            try:
+                image, source = find_cover(artist, album, opts.itunes, stop)
+            except InterruptedError:
+                break
+            except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+                cover_counts["error"] += 1
+                emit("error", index=index, total=total, path=folder, message=str(e))
+                if stop.wait(5):
+                    break
+                continue
+            if image:
+                name = "cover.png" if image[:8] == b"\x89PNG\r\n\x1a\n" else "cover.jpg"
+                if not opts.dry_run:
+                    write_bytes_atomic(os.path.join(folder, name), image)
+                cover("found", artist, album, source)
+            else:
+                cache.remember(key, "no cover")
+                cover("not found", artist, album)
+            if n % 50 == 0:
+                cache.save()
     finally:
         cache.save()
-        emit("done", counts=counts, stopped=stop.is_set())
+        emit("done", counts=counts, covers=cover_counts, stopped=stop.is_set())
     return counts
 
 
@@ -299,6 +459,11 @@ def main(argv=None):
         description="Download lyrics from LRCLIB and save them as .lrc/.txt files next to your songs.")
     ap.add_argument("paths", nargs="+", metavar="PATH", help="music folder(s) or file(s)")
     ap.add_argument("-n", "--dry-run", action="store_true", help="look songs up but write nothing")
+    ap.add_argument("--covers", action="store_true",
+                    help="also save each album folder's front cover as cover.jpg (Cover Art Archive)")
+    ap.add_argument("--itunes", action="store_true",
+                    help="with --covers: fall back to Apple's iTunes catalog for covers")
+    ap.add_argument("--no-lyrics", action="store_true", help="skip lyrics (e.g. covers only)")
     ap.add_argument("--synced-only", action="store_true",
                     help="only write synced lyrics (.lrc); skip songs that only have plain lyrics")
     ap.add_argument("--overwrite", action="store_true",
@@ -328,16 +493,28 @@ def main(argv=None):
         if args.ext else None
     opts = Options(dry_run=args.dry_run, synced_only=args.synced_only, overwrite=args.overwrite,
                    limit=args.limit, delay=args.delay, tolerance=args.tolerance, cache=args.cache,
-                   use_cache=not args.no_cache, retry_days=args.retry_days, extensions=extensions)
+                   use_cache=not args.no_cache, retry_days=args.retry_days, extensions=extensions,
+                   lyrics=not args.no_lyrics, covers=args.covers, itunes=args.itunes)
+    if args.no_lyrics and not args.covers:
+        sys.exit("Nothing to do: --no-lyrics without --covers.")
 
     def emit(event, **d):
         if event == "song" and not args.quiet and d["kind"] != "skipped":
             label = f"{d['artist']} — {d['title']}" if d["artist"] else d["path"]
             print(f"{d['kind']:12} {label}", flush=True)
+        elif event == "cover" and not args.quiet and d["kind"] != "skipped":
+            what = f"{d['artist']} — {d['album']}" if d["album"] else d["folder"]
+            src = f" ({d['source']})" if d["source"] else ""
+            print(f"{'cover ' + d['kind']:12} {what}{src}", flush=True)
         elif event == "error":
             print(f"error        {d['path']}: {d['message']}", file=sys.stderr, flush=True)
         elif event == "done":
-            summary = ", ".join(f"{v} {k}" for k, v in d["counts"].items() if v)
+            parts = []
+            if any(d["counts"].values()):
+                parts.append(", ".join(f"{v} {k}" for k, v in d["counts"].items() if v))
+            if any(d["covers"].values()):
+                parts.append("covers: " + ", ".join(f"{v} {k}" for k, v in d["covers"].items() if v))
+            summary = "; ".join(parts)
             note = " (stopped — run again to continue)" if d["stopped"] else ""
             print(f"done{' (dry run)' if args.dry_run else ''}: {summary or 'nothing to do'}{note}",
                   flush=True)
