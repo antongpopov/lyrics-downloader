@@ -30,12 +30,17 @@ Download it from the [Releases page](https://github.com/antongpopov/lyrics-downl
 |---|---|
 | Mac with Apple silicon (M1 and later), macOS 11+ | `LyricsDownloader-…-mac-arm64.zip` |
 | Mac with an Intel processor, macOS 10.15+ | `LyricsDownloader-…-mac-x86_64.zip` |
-| Windows 10 / 11 | `LyricsDownloader-…-windows.exe` |
+| Windows 10 / 11 | `LyricsDownloader-…-windows.zip` |
 
 - **Mac:** unzip, move **Lyrics Downloader** to Applications and open it. The app is signed and
   notarized by Apple, so it opens normally.
-- **Windows:** run the `.exe`, nothing to install. Windows may say *"Windows protected your PC"*,
-  because the program isn't signed with a paid Microsoft certificate: click **More info → Run anyway**.
+- **Windows:** install Python once — from [python.org](https://www.python.org/downloads/), or
+  `winget install Python.Python.3.13` in a terminal. Then unzip and double-click
+  **`Lyrics Downloader.pyw`**. Everything else it needs is in the zip.
+
+  *Why not an .exe?* Windows 11's Smart App Control blocks any program that isn't signed with a
+  paid code-signing certificate — not worth it for a free tool. Python itself is signed, so the
+  app runs as a Python script instead: same window, same features.
 
 Choose your music folder, tick what you want (lyrics, album covers or both), and press **Start**. The window lists every song as it
 goes and shows a running count; **Stop** ends the run, and the next Start carries on where it

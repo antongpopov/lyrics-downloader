@@ -273,6 +273,11 @@ class App:
 
 
 def main():
+    if core.TinyTag is None and not core.shutil.which("ffprobe"):
+        tk.Tk().withdraw()
+        messagebox.showerror(APP_NAME, "Lyrics Downloader needs the tinytag package to read your songs.\n\n"
+                                       "Install it with:  python -m pip install tinytag")
+        return
     root = tk.Tk()
     try:
         ttk.Style().theme_use("aqua" if sys.platform == "darwin" else
