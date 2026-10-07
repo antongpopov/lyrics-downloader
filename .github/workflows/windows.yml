@@ -1,8 +1,8 @@
-# Builds the Windows download: a zip with the app's Python files, tinytag bundled, and
+# Builds the Windows and Linux downloads. Windows: a zip with the app's Python files, tinytag bundled, and
 # "Lyrics Downloader.pyw" to double-click. No .exe: an unsigned .exe is blocked outright by
 # Windows 11 Smart App Control, while Python itself is signed. Runs on every v* tag (and by hand
 # with a tag name) and attaches the zip to that release.
-name: Windows build
+name: Windows and Linux builds
 
 on:
   push:
@@ -76,3 +76,55 @@ jobs:
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           files: ${{ env.ZIP }}
+
+  # Linux: a .tar.gz with the same Python files, tinytag and truststore bundled, and an executable
+  # launcher. Python 3 ships with every distribution; only Tk may need installing.
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Assemble
+        run: |
+          VERSION=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' lyrics_downloader.py)
+          D="lyrics-downloader-$VERSION"
+          mkdir -p "pkg/$D"
+          cp lyrics_downloader.py lyrics_downloader_gui.py lyrics-downloader-gui LICENSE "pkg/$D/"
+          chmod +x "pkg/$D/lyrics-downloader-gui" "pkg/$D/lyrics_downloader.py"
+          python -m pip install --target "pkg/$D" --no-deps tinytag truststore
+          rm -rf "pkg/$D"/bin "pkg/$D"/*.dist-info/RECORD
+          cat > "pkg/$D/README.txt" <<'TXT'
+          Lyrics Downloader for Linux
+          ===========================
+
+          Needs Python 3.8+ (already on most systems) with Tk for the window:
+              Debian / Ubuntu:  sudo apt install python3-tk
+              Fedora:           sudo dnf install python3-tkinter
+              Arch:             sudo pacman -S tk
+
+          Start the app:          ./lyrics-downloader-gui
+          Or the command line:    ./lyrics_downloader.py --help
+
+          More: https://github.com/antongpopov/lyrics-downloader
+          Bundled: tinytag and truststore (both MIT licence).
+          TXT
+          sed -i 's/^          //' "pkg/$D/README.txt"
+          tar -C pkg -czf "LyricsDownloader-$VERSION-linux.tar.gz" "$D"
+          echo "TGZ=LyricsDownloader-$VERSION-linux.tar.gz" >> "$GITHUB_ENV"
+          echo "DIR=pkg/$D" >> "$GITHUB_ENV"
+      - name: Smoke test (the bundled files load on Linux)
+        run: |
+          cd "$DIR"
+          python -c "import lyrics_downloader as c, lyrics_downloader_gui; assert c.TinyTag is not None; assert c.use_system_certificates(); print('ok', c.__version__)"
+          ./lyrics_downloader.py --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: ${{ env.TGZ }}
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: ${{ env.TGZ }}

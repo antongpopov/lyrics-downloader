@@ -31,13 +31,18 @@ Download it from the [Releases page](https://github.com/antongpopov/lyrics-downl
 | Mac with Apple silicon (M1 and later), macOS 11+ | `LyricsDownloader-…-mac-arm64.zip` |
 | Mac with an Intel processor, macOS 10.15+ | `LyricsDownloader-…-mac-x86_64.zip` |
 | Windows 10 / 11 | `LyricsDownloader-…-windows.zip` |
+| Linux | `LyricsDownloader-…-linux.tar.gz` |
 
 - **Mac:** unzip, move **Lyrics Downloader** to Applications and open it. The app is signed and
   notarized by Apple, so it opens normally.
 - **Windows:** install Python once (see below), then unzip and double-click
   **`Lyrics Downloader.pyw`**. Everything else it needs is in the zip.
 
-  *Why not an .exe?* Windows 11's Smart App Control blocks any program that isn't signed with a
+- **Linux:** unpack and run `./lyrics-downloader-gui`. It uses the system's Python 3; the window
+  needs Tk (`sudo apt install python3-tk` on Debian/Ubuntu, `python3-tkinter` on Fedora, `tk` on
+  Arch).
+
+  *Why not an .exe on Windows?* Windows 11's Smart App Control blocks any program that isn't signed with a
   paid code-signing certificate — not worth it for a free tool. Python itself is signed, so the
   app runs as a Python script instead: same window, same features.
 

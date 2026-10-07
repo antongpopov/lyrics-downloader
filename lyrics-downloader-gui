@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""Start Lyrics Downloader on Linux: ./lyrics-downloader-gui (or double-click, if your file
+manager runs executables). Needs Python 3.8+ with Tk — Debian/Ubuntu: sudo apt install python3-tk."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    import lyrics_downloader_gui
+except ImportError as e:
+    sys.exit(f"Lyrics Downloader can't start: {e}\n"
+             "Install Python's Tk support, e.g.  sudo apt install python3-tk  (Debian/Ubuntu),\n"
+             "sudo dnf install python3-tkinter  (Fedora),  sudo pacman -S tk  (Arch).")
+lyrics_downloader_gui.main()
