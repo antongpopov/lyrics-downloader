@@ -24,8 +24,8 @@ Download it from the [Releases page](https://github.com/antongpopov/lyrics-downl
 
 | System | Download |
 |---|---|
-| Mac with Apple silicon (M1 and later) | `LyricsDownloader-…-mac-arm64.zip` |
-| Mac with an Intel processor | `LyricsDownloader-…-mac-x86_64.zip` |
+| Mac with Apple silicon (M1 and later), macOS 11+ | `LyricsDownloader-…-mac-arm64.zip` |
+| Mac with an Intel processor, macOS 10.15+ | `LyricsDownloader-…-mac-x86_64.zip` |
 | Windows 10 / 11 | `LyricsDownloader-…-windows.exe` |
 
 - **Mac:** unzip, move **Lyrics Downloader** to Applications and open it. The app is signed and
