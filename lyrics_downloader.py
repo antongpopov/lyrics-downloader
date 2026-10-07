@@ -32,7 +32,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-__version__ = "1.2.1"
+__version__ = "1.2.2"
 
 AUDIO_EXTENSIONS = {".mp3", ".m4a", ".flac", ".ogg", ".opus", ".wav", ".aac", ".alac",
                     ".aiff", ".aif", ".wma", ".ape", ".wv"}

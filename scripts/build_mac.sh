@@ -35,10 +35,21 @@ plutil -replace NSHumanReadableCopyright -string "MIT licence · github.com/anto
 echo "   $(lipo -archs "$BUNDLE/Contents/MacOS/$APP"), $(du -sh "$BUNDLE" | cut -f1)"
 
 ZIP="$OUT/LyricsDownloader-$VERSION-mac-$ARCH.zip"
+# The download: a folder with the app and `lyrics-downloader`, the text version (it runs the
+# app's own program with arguments, so it needs no Python).
+package() {
+  local P="$WORK/package/Lyrics Downloader"
+  rm -rf "$WORK/package" && mkdir -p "$P"
+  ditto "$BUNDLE" "$P/$APP.app"
+  cp scripts/lyrics-downloader-mac "$P/lyrics-downloader"
+  chmod +x "$P/lyrics-downloader"
+  rm -f "$ZIP"
+  ditto -c -k --norsrc --keepParent "$P" "$ZIP"   # no ._ metadata files
+}
 IDENTITY=$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p' | head -1)
 if [[ ${SIGN:-1} == 0 || -z $IDENTITY ]]; then
   echo "== no Developer ID Application certificate: leaving the app UNSIGNED"
-  ditto -c -k --keepParent "$BUNDLE" "$ZIP"
+  package
 else
   echo "== Signing as $IDENTITY"
   # Inside out: every binary first, then the bundle, all with the hardened runtime.
@@ -52,12 +63,12 @@ else
     done
   codesign --force --timestamp --options runtime --entitlements assets/entitlements.plist -s "$IDENTITY" "$BUNDLE"
   codesign --verify --deep --strict "$BUNDLE"
-  ditto -c -k --keepParent "$BUNDLE" "$ZIP"
+  ditto -c -k --keepParent "$BUNDLE" "$ZIP"   # notarization submission: the app alone
   echo "== Notarizing (a few minutes)"
   xcrun notarytool submit "$ZIP" --key "${ASC_KEY_PATH:?}" --key-id "${ASC_KEY_ID:?}" --issuer "${ASC_ISSUER_ID:?}" --wait
   xcrun stapler staple "$BUNDLE"
   spctl --assess --type execute -v "$BUNDLE"
-  rm "$ZIP" && ditto -c -k --keepParent "$BUNDLE" "$ZIP"
+  rm "$ZIP" && package
 fi
 echo "== $ZIP"
 

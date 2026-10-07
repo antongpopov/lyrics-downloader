@@ -51,6 +51,12 @@ jobs:
 
                  pyw "Lyrics Downloader.pyw"
 
+          Text version (no window), in a Terminal opened in this folder:
+
+                 py lyrics_downloader.py "D:\Music"
+                 py lyrics_downloader.py "D:\Music" --covers
+                 py lyrics_downloader.py --help
+
           Choose your music folder, tick Lyrics and/or Album covers, press Start.
 
           More: https://github.com/antongpopov/lyrics-downloader

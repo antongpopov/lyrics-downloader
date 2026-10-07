@@ -275,6 +275,12 @@ class App:
 
 
 def main():
+    # With arguments it is the text version: the packaged Mac app's program doubles as the
+    # command-line tool (`Lyrics Downloader.app/Contents/MacOS/Lyrics Downloader ~/Music`).
+    # macOS may pass a -psn_… argument when launched from Finder; that's not a request for text.
+    args = [a for a in sys.argv[1:] if not a.startswith("-psn_")]
+    if args:
+        sys.exit(core.main(args))
     if core.TinyTag is None and not core.shutil.which("ffprobe"):
         tk.Tk().withdraw()
         messagebox.showerror(APP_NAME, "Lyrics Downloader needs the tinytag package to read your songs.\n\n"

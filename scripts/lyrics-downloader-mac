@@ -1,0 +1,14 @@
+#!/bin/sh
+# Lyrics Downloader, text version, on the Mac: runs the app's own program with your arguments,
+# so no Python install is needed. Keep this file next to "Lyrics Downloader.app" (or in your
+# PATH, if the app is in /Applications).
+#   ./lyrics-downloader ~/Music --covers
+#   ./lyrics-downloader --help
+here=$(cd "$(dirname "$0")" && pwd)
+for app in "$here/Lyrics Downloader.app" "/Applications/Lyrics Downloader.app" "$HOME/Applications/Lyrics Downloader.app"; do
+  if [ -x "$app/Contents/MacOS/Lyrics Downloader" ]; then
+    exec "$app/Contents/MacOS/Lyrics Downloader" "$@"
+  fi
+done
+echo "Can't find Lyrics Downloader.app next to this file or in Applications." >&2
+exit 1

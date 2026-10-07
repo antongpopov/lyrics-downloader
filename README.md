@@ -9,9 +9,10 @@ Music/ABBA/ABBA Gold/02 Knowing Me, Knowing You.lrc   ← synced, time-stamped l
 Music/ABBA/ABBA Gold/cover.jpg                        ← album cover (optional)
 ```
 
-- **Desktop app** for macOS and Windows: pick your music folder, press Start.
-- Or the **command line**: one Python file; needs Python 3.8+ plus either the small `tinytag`
-  package or `ffprobe` (part of FFmpeg) to read your songs' tags.
+- For **macOS, Windows and Linux**, each with an **app** (pick your music folder, press Start) and
+  a **text version** for the terminal, scripts and servers.
+- At heart one Python file: run it straight from this repository with Python 3.8+ plus either
+  the small `tinytag` package or `ffprobe` (part of FFmpeg) to read your songs' tags.
 - Lyrics come from [LRCLIB](https://lrclib.net), a free, community-built lyrics database with an
   open API (no account or API key).
 - Prefers **synced** lyrics (`.lrc`, which scroll along with the song); falls back to plain lyrics
@@ -22,29 +23,36 @@ Music/ABBA/ABBA Gold/cover.jpg                        ← album cover (optional)
 - Safe to stop and run again: songs that already have lyrics are skipped, and songs with no match
   are remembered so they aren't looked up on every run.
 
-## Desktop app
+## Download
 
-Download it from the [Releases page](https://github.com/antongpopov/lyrics-downloader/releases/latest):
+Every download has **both versions**: the **app** (a window — pick a folder, press Start) and the
+**text version** (for the terminal, scripts, servers and scheduled runs). Get yours from the
+[Releases page](https://github.com/antongpopov/lyrics-downloader/releases/latest):
 
-| System | Download |
-|---|---|
-| Mac with Apple silicon (M1 and later), macOS 11+ | `LyricsDownloader-…-mac-arm64.zip` |
-| Mac with an Intel processor, macOS 10.15+ | `LyricsDownloader-…-mac-x86_64.zip` |
-| Windows 10 / 11 | `LyricsDownloader-…-windows.zip` |
-| Linux | `LyricsDownloader-…-linux.tar.gz` |
+| System | Download | App | Text version |
+|---|---|---|---|
+| Mac, Apple silicon (M1 and later), macOS 11+ | `…-mac-arm64.zip` | **Lyrics Downloader.app** | `./lyrics-downloader ~/Music` |
+| Mac, Intel, macOS 10.15+ | `…-mac-x86_64.zip` | **Lyrics Downloader.app** | `./lyrics-downloader ~/Music` |
+| Windows 10 / 11 | `…-windows.zip` | **Lyrics Downloader.pyw** | `py lyrics_downloader.py "D:\Music"` |
+| Linux | `…-linux.tar.gz` | `./lyrics-downloader-gui` | `./lyrics_downloader.py ~/Music` |
 
-- **Mac:** unzip, move **Lyrics Downloader** to Applications and open it. The app is signed and
-  notarized by Apple, so it opens normally.
-- **Windows:** install Python once (see below), then unzip and double-click
-  **`Lyrics Downloader.pyw`**. Everything else it needs is in the zip.
+- **Mac:** unzip; move **Lyrics Downloader.app** to Applications and open it — it's signed and
+  notarized by Apple, so it opens normally. The text version, `lyrics-downloader`, runs the app's
+  own program, so it needs no Python; keep it next to the app or put it in your `PATH` (it also
+  finds the app in Applications).
+- **Windows:** install Python once (see below), unzip (*Extract All…*), and double-click
+  **`Lyrics Downloader.pyw`**. For the text version, open a Terminal in that folder and run
+  `py lyrics_downloader.py "D:\Music"`. Everything else either needs is in the zip.
 
-- **Linux:** unpack and run `./lyrics-downloader-gui`. It uses the system's Python 3; the window
-  needs Tk (`sudo apt install python3-tk` on Debian/Ubuntu, `python3-tkinter` on Fedora, `tk` on
-  Arch).
-
-  *Why not an .exe on Windows?* Windows 11's Smart App Control blocks any program that isn't signed with a
+  *Why not an .exe?* Windows 11's Smart App Control blocks any program that isn't signed with a
   paid code-signing certificate — not worth it for a free tool. Python itself is signed, so the
   app runs as a Python script instead: same window, same features.
+- **Linux:** unpack and run `./lyrics-downloader-gui`, or `./lyrics_downloader.py` for the text
+  version. Both use the system's Python 3; only the window needs Tk (`sudo apt install python3-tk`
+  on Debian/Ubuntu, `python3-tkinter` on Fedora, `tk` on Arch) — the text version doesn't.
+
+The text version takes the options listed under [Command line](#command-line), e.g.
+`--covers`, `--dry-run`, `--help`.
 
 ### Installing Python on Windows
 
@@ -69,11 +77,14 @@ Then double-click `Lyrics Downloader.pyw`. If Windows asks which app to open it 
 **Python**. If double-clicking does nothing, start it from a Terminal opened in the unzipped
 folder: `pyw "Lyrics Downloader.pyw"`.
 
-Choose your music folder, tick what you want (lyrics, album covers or both), and press **Start**. The window lists every song as it
+**Using the app:** choose your music folder, tick what you want (lyrics, album covers or both), and press **Start**. The window lists every song as it
 goes and shows a running count; **Stop** ends the run, and the next Start carries on where it
 left off. The app remembers your folder.
 
 ## Command line
+
+The text version from the downloads works as described here. You can also run it straight from
+this repository with your own Python:
 
 ### Requirements
 
