@@ -34,13 +34,35 @@ Download it from the [Releases page](https://github.com/antongpopov/lyrics-downl
 
 - **Mac:** unzip, move **Lyrics Downloader** to Applications and open it. The app is signed and
   notarized by Apple, so it opens normally.
-- **Windows:** install Python once — from [python.org](https://www.python.org/downloads/), or
-  `winget install Python.Python.3.13` in a terminal. Then unzip and double-click
+- **Windows:** install Python once (see below), then unzip and double-click
   **`Lyrics Downloader.pyw`**. Everything else it needs is in the zip.
 
   *Why not an .exe?* Windows 11's Smart App Control blocks any program that isn't signed with a
   paid code-signing certificate — not worth it for a free tool. Python itself is signed, so the
   app runs as a Python script instead: same window, same features.
+
+### Installing Python on Windows
+
+Python is free and only needs installing once. The quickest way is **winget**, which is built into
+Windows 10 and 11:
+
+1. Right-click the **Start** button and choose **Terminal** (or *Windows PowerShell*).
+2. Type this and press Enter:
+
+   ```powershell
+   winget install --id Python.Python.3.13 -e
+   ```
+
+   Accept the prompts. It takes a minute.
+3. Close the Terminal. To check, open a new one and run `py --version` — it should print
+   `Python 3.13.…`.
+
+No winget? Download the installer from [python.org/downloads](https://www.python.org/downloads/)
+and run it with the default options.
+
+Then double-click `Lyrics Downloader.pyw`. If Windows asks which app to open it with, choose
+**Python**. If double-clicking does nothing, start it from a Terminal opened in the unzipped
+folder: `pyw "Lyrics Downloader.pyw"`.
 
 Choose your music folder, tick what you want (lyrics, album covers or both), and press **Start**. The window lists every song as it
 goes and shows a running count; **Stop** ends the run, and the next Start carries on where it

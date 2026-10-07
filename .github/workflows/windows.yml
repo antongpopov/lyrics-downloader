@@ -37,9 +37,19 @@ jobs:
           Lyrics Downloader for Windows
           =============================
 
-          1. Install Python 3 once, from https://www.python.org/downloads/
-             (or in a terminal: winget install Python.Python.3.13).
+          1. Install Python once (free). Quickest: right-click the Start button,
+             choose Terminal, type this and press Enter:
+
+                 winget install --id Python.Python.3.13 -e
+
+             Or download the installer from https://www.python.org/downloads/
+             and run it with the default options.
+
           2. Double-click "Lyrics Downloader.pyw".
+             If Windows asks which app to open it with, choose Python.
+             If nothing happens, open a Terminal in this folder and run:
+
+                 pyw "Lyrics Downloader.pyw"
 
           Choose your music folder, tick Lyrics and/or Album covers, press Start.
 
